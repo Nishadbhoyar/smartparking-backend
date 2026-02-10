@@ -1,6 +1,7 @@
 package com.smartparking.backend.config;
 
 import com.smartparking.backend.service.CustomOAuth2UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -15,6 +16,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import java.util.List;
 
 @Configuration
@@ -25,7 +27,10 @@ public class SecurityConfig {
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final JwtFilter jwtFilter;
 
-    // ✅ Explicit constructor with @Lazy
+    // ✅ Inject frontend URL from environment
+    @Value("${FRONTEND_URL}")
+    private String frontendUrl;
+
     public SecurityConfig(
             @Lazy CustomOAuth2UserService customOAuth2UserService,
             @Lazy OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
@@ -42,6 +47,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -50,7 +56,8 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/login/**",
                                 "/oauth2/**",
-                                "/error")
+                                "/error",
+                                "/uploads/**")
                         .permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -58,17 +65,14 @@ public class SecurityConfig {
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
                         .successHandler(oAuth2LoginSuccessHandler)
                         .failureHandler((request, response, exception) -> {
-                            System.out.println("--- OAuth2 Failure Handler Triggered ---");
-                            System.out.println("Error Message: " + exception.getMessage());
-                            exception.printStackTrace();
 
                             String msg = exception.getMessage();
 
-                            if (msg != null
-                                    && (msg.contains("user_not_registered") || msg.contains("User not registered"))) {
-                                response.sendRedirect("http://localhost:5173/login?error=not_registered");
+                            if (msg != null &&
+                                    (msg.contains("user_not_registered") || msg.contains("User not registered"))) {
+                                response.sendRedirect(frontendUrl + "/login?error=not_registered");
                             } else {
-                                response.sendRedirect("http://localhost:5173/login?error=oauth_failure");
+                                response.sendRedirect(frontendUrl + "/login?error=oauth_failure");
                             }
                         }));
 
@@ -79,8 +83,12 @@ public class SecurityConfig {
 
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+
+        config.setAllowedOrigins(List.of(
+                frontendUrl,
+                "http://localhost:5173"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -91,7 +99,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
+            throws Exception {
         return config.getAuthenticationManager();
     }
 }
