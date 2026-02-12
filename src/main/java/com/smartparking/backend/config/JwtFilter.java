@@ -1,6 +1,6 @@
 package com.smartparking.backend.config;
 
-import com.smartparking.backend.service.CustomUserDetailsService; // Ensure this matches your service
+import com.smartparking.backend.service.CustomUserDetailsService;
 import com.smartparking.backend.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -24,49 +24,77 @@ public class JwtFilter extends OncePerRequestFilter {
     private JwtUtil jwtUtil;
 
     @Autowired
-    @Lazy // Use @Lazy to break any potential bean cycle with SecurityConfig
+    @Lazy
     private CustomUserDetailsService userDetailsService;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain)
             throws ServletException, IOException {
 
-        final String authorizationHeader = request.getHeader("Authorization");
+        // 1. Skip filter for public endpoints
+        String path = request.getRequestURI();
+        if (path.startsWith("/api/auth/") || path.startsWith("/oauth2/")) {
+            chain.doFilter(request, response);
+            return;
+        }
 
-        String username = null;
-        String jwt = null;
+        final String authHeader = request.getHeader("Authorization");
+        String token = null;
+        String email = null;
 
-        // 1. Extract JWT from Header
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-            jwt = authorizationHeader.substring(7);
+        // 2. Extract Token
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
             try {
-                username = jwtUtil.extractUsername(jwt);
+                email = jwtUtil.extractUsername(token);
             } catch (Exception e) {
-                System.out.println("JWT Token validation failed: " + e.getMessage());
+                // ❌ Token is malformed or tampered — reject immediately
+                System.err.println("❌ [JwtFilter] Invalid Token: " + e.getMessage());
+                sendUnauthorized(response, "Invalid or malformed JWT token.");
+                return; // ✅ FIX: Stop the filter chain — don't let it fall through
             }
         }
 
-        // 2. Validate and Set Context
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        // 3. Validate and Set Auth
+        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            try {
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(email);
 
-            // Load User Details from DB
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+                if (jwtUtil.validateToken(token, userDetails.getUsername())) {
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                    System.out.println("✅ [JwtFilter] Authenticated User: " + email);
+                } else {
+                    // Token signature valid but expired or username mismatch
+                    System.err.println("❌ [JwtFilter] Token validation failed for: " + email);
+                    sendUnauthorized(response, "JWT token is expired or invalid.");
+                    return; // ✅ FIX: Stop the filter chain
+                }
 
-            // Validate Token
-            if (jwtUtil.validateToken(jwt, userDetails.getUsername())) {
-
-                // 3. 🚨 CRITICAL FIX: Create Authentication Token MANUALLY
-                // Do NOT use authenticationManager.authenticate() here!
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                // 4. Set the Authentication in the Context
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            } catch (Exception e) {
+                // ✅ FIX #2: User not found in DB (e.g., backend restarted and H2 data wiped).
+                // Previously this silently fell through, letting Spring Security return a
+                // generic 401. Now we return an explicit, descriptive 401 immediately.
+                System.err.println("❌ [JwtFilter] User Not Found in DB for email: " + email);
+                System.err.println("   Likely cause: backend restarted and H2 in-memory data was wiped.");
+                System.err.println("   Fix: See application.properties — switch to file-based H2 or MySQL.");
+                sendUnauthorized(response, "Session expired. Please sign up or log in again.");
+                return; // ✅ FIX: Stop the filter chain
             }
         }
 
         chain.doFilter(request, response);
+    }
+
+    // ─── Helper ──────────────────────────────────────────────────────────────
+    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.getWriter().write(
+                "{\"error\": \"Unauthorized\", \"message\": \"" + message + "\"}");
     }
 }

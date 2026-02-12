@@ -3,16 +3,26 @@ package com.smartparking.backend.controller;
 import com.smartparking.backend.model.Booking;
 import com.smartparking.backend.repository.BookingRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType; // ✅ Import for Multipart
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile; // ✅ Import for Files
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/bookings")
 @CrossOrigin(origins = "http://localhost:5173")
-@SuppressWarnings("null") // 👈 THIS FIXES THE WARNINGS
+@SuppressWarnings("null")
 public class BookingController {
 
     @Autowired
@@ -70,15 +80,56 @@ public class BookingController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
-    // 6. VALET PARKS THE CAR (Check-in)
-    @PostMapping("/{id}/checkin")
-    public ResponseEntity<?> checkInVehicle(@PathVariable @NonNull Long id, @RequestBody Booking data) {
+    // ✅ 6. NEW: VALET PARKS CAR (Handles Images & Location)
+    @PostMapping(value = "/{id}/complete", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> completeValetBooking(
+            @PathVariable @NonNull Long id,
+            @RequestParam("parkedLat") Double parkedLat,
+            @RequestParam("parkedLng") Double parkedLng,
+            @RequestParam(value = "files", required = false) List<MultipartFile> files
+    ) {
         return bookingRepository.findById(id).map(booking -> {
-            booking.setStatus("PARKED");
-            booking.setParkedLat(data.getParkedLat());
-            booking.setParkedLng(data.getParkedLng());
-            booking.setParkedProofImage(data.getParkedProofImage());
-            return ResponseEntity.ok(bookingRepository.save(booking));
+            try {
+                // 1. Update Booking Data
+                booking.setParkedLat(parkedLat);
+                booking.setParkedLng(parkedLng);
+                booking.setStatus("PARKED");
+
+                // 2. Handle Image Uploads
+                if (files != null && !files.isEmpty()) {
+                    // Create upload directory if it doesn't exist
+                    Path uploadPath = Paths.get("uploads");
+                    if (!Files.exists(uploadPath)) {
+                        Files.createDirectories(uploadPath);
+                    }
+
+                    List<String> uploadedUrls = new ArrayList<>();
+
+                    for (MultipartFile file : files) {
+                        // Generate unique filename
+                        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+                        Path filePath = uploadPath.resolve(fileName);
+                        
+                        // Save file to disk
+                        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+                        
+                        // Create URL (Assuming you serve uploads from root)
+                        String fileUrl = "http://localhost:8080/uploads/" + fileName;
+                        uploadedUrls.add(fileUrl);
+                    }
+
+                    // Save the first image as the proof (if your model only supports one string)
+                    // If you want to support multiple, you'd need to change your Entity to store a list or comma-separated string
+                    if (!uploadedUrls.isEmpty()) {
+                        booking.setParkedProofImage(uploadedUrls.get(0));
+                    }
+                }
+
+                return ResponseEntity.ok(bookingRepository.save(booking));
+
+            } catch (IOException e) {
+                return ResponseEntity.internalServerError().body("Error saving images: " + e.getMessage());
+            }
         }).orElse(ResponseEntity.notFound().build());
     }
 

@@ -3,9 +3,10 @@ package com.smartparking.backend.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
 import java.util.function.Function;
@@ -13,8 +14,9 @@ import java.util.function.Function;
 @Component
 public class JwtUtil {
 
-    // 🚨 IMPORTANT: Ensure this key is at least 32 characters long
-    private static final String SECRET = "5367566B59703373367639792F423F4528482B4D6251655468576D5A71347437";
+    // ✅ FIX: Secret must be >= 32 chars for HS256.
+    //    Do NOT store plaintext secrets in code for production — use environment variables.
+    private static final String SECRET = "MySuperSecretKeyForParkingApp1234567890123456";
 
     public String generateToken(String email) {
         return Jwts.builder()
@@ -25,7 +27,6 @@ public class JwtUtil {
                 .compact();
     }
 
-    // ✅ FIX 1: This method was "undefined" in your error log. Now it exists.
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
@@ -44,12 +45,12 @@ public class JwtUtil {
     }
 
     private Key getSignKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(SECRET);
-        return Keys.hmacShaKeyFor(keyBytes);
+        // ✅ FIX #3: Use getBytes() directly — NOT Decoders.BASE64.decode().
+        //    BASE64.decode() treats your string as Base64-encoded data, which it is NOT.
+        //    This was causing an inconsistent key that could fail on certain JVM/JJWT versions.
+        return Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
     }
 
-    // ✅ FIX 2: Your error said this method didn't accept (String, String). Now it
-    // does.
     public boolean validateToken(String token, String username) {
         final String extractedUsername = extractUsername(token);
         return (extractedUsername.equals(username) && !isTokenExpired(token));
