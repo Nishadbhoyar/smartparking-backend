@@ -1,0 +1,17 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!target/*.jar
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.log
+*.sh
+hs_err_pid*
+.git/
+.gitignore
+.github/
+.vscode/
+.env
+uploads/
