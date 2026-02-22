@@ -15,10 +15,10 @@ public class OtpService {
     // Existing OTP Storage (Email -> OTP)
     private final Map<String, String> otpStorage = new ConcurrentHashMap<>();
 
-    // ✅ NEW: Magic Link Storage (Token -> Email)
+    // Magic Link Storage (Token -> Email)
     private final Map<String, String> magicLinkStorage = new ConcurrentHashMap<>();
 
-    // --- Existing OTP Methods ---
+    // --- OTP Methods ---
     public void generateAndSendOtp(String email) {
         String otp = String.format("%06d", new java.util.Random().nextInt(1000000));
         otpStorage.put(email, otp);
@@ -27,12 +27,17 @@ public class OtpService {
     }
 
     public boolean validateOtp(String email, String otpInput) {
-        if (!otpStorage.containsKey(email))
-            return false;
-        return otpStorage.get(email).equals(otpInput);
+        String storedOtp = otpStorage.get(email);
+        
+        if (storedOtp != null && storedOtp.equals(otpInput)) {
+            // ✅ SECURITY FIX: Delete the OTP so it can NEVER be reused!
+            otpStorage.remove(email); 
+            return true;
+        }
+        return false;
     }
 
-    // --- ✅ NEW: Magic Link Methods ---
+    // --- Magic Link Methods ---
     public void generateAndSendMagicLink(String email) {
         // 1. Generate a long, unique token
         String token = UUID.randomUUID().toString();

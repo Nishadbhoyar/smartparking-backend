@@ -5,11 +5,15 @@ import com.smartparking.backend.model.ParkingLot;
 import com.smartparking.backend.model.ParkingSlot;
 import com.smartparking.backend.repository.ParkingLotRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull; // 1. Added Import
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 import java.util.List;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping("/api/parking-lots")
@@ -149,12 +153,21 @@ public class ParkingLotController {
     // 5. DELETE PARKING LOT
     // ==========================================
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteParkingLot(@PathVariable @NonNull Long id) {
-        if (parkingLotRepository.existsById(id)) {
+    public ResponseEntity<?> deleteParkingLot(@PathVariable Long id) {
+        try {
             parkingLotRepository.deleteById(id);
-            return ResponseEntity.ok().body("Parking lot deleted successfully");
+            return ResponseEntity.ok(Map.of("message", "Parking lot deleted successfully"));
+
+        } catch (DataIntegrityViolationException e) {
+            // This catches the foreign key error!
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error",
+                            "Cannot delete this parking lot because it has existing bookings or slots tied to it."));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to delete parking lot: " + e.getMessage()));
         }
-        return ResponseEntity.notFound().build();
     }
 
     // ==========================================
