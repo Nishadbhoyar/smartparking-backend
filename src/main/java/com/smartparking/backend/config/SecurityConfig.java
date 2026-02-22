@@ -103,7 +103,12 @@ public class SecurityConfig {
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(frontendUrl, "http://localhost:5173"));
+
+        // ✅ FIX: Added your live Vercel URL to the allowed origins list
+        config.setAllowedOrigins(List.of(
+                frontendUrl,
+                "http://localhost:5173",
+                "https://smartparking-frontend-lilac.vercel.app"));
 
         // ✅ FIX: Added "PATCH" to this list
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
