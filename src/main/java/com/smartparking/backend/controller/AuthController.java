@@ -4,6 +4,9 @@ import com.smartparking.backend.model.User;
 import com.smartparking.backend.repository.UserRepository;
 import com.smartparking.backend.service.OtpService;
 import com.smartparking.backend.util.JwtUtil;
+
+import jakarta.mail.MessagingException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder; // 👈 WAS MISSING
@@ -47,7 +50,7 @@ public class AuthController {
     }
 
     // ==========================================
-    // 2. VERIFY OTP
+    // 2. VERIFY OTP (Account Activation)
     // ==========================================
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> request) {
@@ -60,16 +63,14 @@ public class AuthController {
 
         User user = userRepository.findByEmail(email).orElse(null);
         if (user == null) {
-            user = new User();
-            user.setEmail(email);
-            user.setName("New User");
-            user.setRole("DRIVER");
-            user.setProvider("EMAIL_OTP");
-            // ✅ FIX: Hash the default password
-            user.setPassword(passwordEncoder.encode("OTP-LOGIN"));
-            userRepository.save(user);
+            return ResponseEntity.badRequest().body("Error: User not found. Please sign up first.");
         }
 
+        // ✅ NEW: The OTP is correct! Unlock the account.
+        user.setVerified(true);
+        userRepository.save(user);
+
+        // Optional: Log them in immediately after verifying
         String token = jwtUtil.generateToken(user.getEmail());
         return ResponseEntity.ok(buildLoginResponse(user, token));
     }
@@ -85,9 +86,13 @@ public class AuthController {
             return ResponseEntity.status(401).body("Error: User not found");
         }
 
-        // ✅ FIX: Use matches() to compare plain text vs Hash
         if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
             return ResponseEntity.status(401).body("Error: Invalid Password");
+        }
+
+        // ✅ NEW: Block login if they haven't done the OTP step yet
+        if (!user.isVerified()) {
+            return ResponseEntity.status(403).body("Error: Please verify your email with the OTP before logging in.");
         }
 
         String token = jwtUtil.generateToken(user.getEmail());
@@ -106,17 +111,27 @@ public class AuthController {
         User user = new User();
         user.setName(signupRequest.getName());
         user.setEmail(signupRequest.getEmail());
-
-        // ✅ FIX: Hash password before saving
+        
+        // Hash password before saving
         user.setPassword(passwordEncoder.encode(signupRequest.getPassword()));
-
+        
         user.setRole(signupRequest.getRole());
         user.setPhoneNumber(signupRequest.getPhoneNumber());
         user.setProvider("EMAIL");
+        
+        // ✅ NEW: Lock their account until they verify the OTP
+        user.setVerified(false); 
 
         userRepository.save(user);
 
-        return ResponseEntity.ok(Map.of("message", "Registration successful! Please login."));
+        // ✅ NEW: Automatically trigger the OTP email!
+        try {
+            otpService.generateAndSendOtp(user.getEmail());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("User registered, but failed to send OTP: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Registration successful! Please check your email for the OTP."));
     }
 
     // ==========================================
@@ -147,7 +162,7 @@ public class AuthController {
     // 6. MAGIC LINK ENDPOINTS
     // ==========================================
     @PostMapping("/send-magic-link")
-    public ResponseEntity<?> sendMagicLink(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> sendMagicLink(@RequestBody Map<String, String> request) throws MessagingException {
         String email = request.get("email");
         otpService.generateAndSendMagicLink(email);
         return ResponseEntity.ok(Map.of("message", "Magic link sent! Check your email."));

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import jakarta.mail.MessagingException;
 
 @Service
 public class OtpService {
@@ -28,17 +29,17 @@ public class OtpService {
 
     public boolean validateOtp(String email, String otpInput) {
         String storedOtp = otpStorage.get(email);
-        
+
         if (storedOtp != null && storedOtp.equals(otpInput)) {
             // ✅ SECURITY FIX: Delete the OTP so it can NEVER be reused!
-            otpStorage.remove(email); 
+            otpStorage.remove(email);
             return true;
         }
         return false;
     }
 
     // --- Magic Link Methods ---
-    public void generateAndSendMagicLink(String email) {
+    public void generateAndSendMagicLink(String email) throws MessagingException {
         // 1. Generate a long, unique token
         String token = UUID.randomUUID().toString();
 

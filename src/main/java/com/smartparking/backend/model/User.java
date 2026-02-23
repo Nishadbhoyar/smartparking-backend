@@ -103,4 +103,17 @@ public class User {
     public void setRole(String role) {
         this.role = role;
     }
+
+    // Add this to your fields
+    @Column(nullable = false)
+    private boolean isVerified = false;
+
+    // Add these methods
+    public boolean isVerified() {
+        return isVerified;
+    }
+
+    public void setVerified(boolean verified) {
+        isVerified = verified;
+    }
 }
