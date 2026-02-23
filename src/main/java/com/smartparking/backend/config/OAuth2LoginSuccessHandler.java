@@ -14,6 +14,7 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 import java.io.IOException;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
@@ -25,6 +26,9 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
     @Autowired
     @Lazy
     private UserRepository userRepository;
+
+    @Value("${app.frontend.url:https://smartparking-frontend-lilac.vercel.app/}")
+    private String frontendUrl;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
@@ -46,17 +50,22 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             // 3. Generate JWT
             String token = jwtUtil.generateToken(email);
 
-            // 4. Redirect to React Frontend with Token
-            String targetUrl = UriComponentsBuilder.fromUriString("http://localhost:5173/auth/callback")
+            String targetUrl = UriComponentsBuilder
+                    .fromUriString(frontendUrl + "/auth/callback")
                     .queryParam("token", token)
                     .queryParam("role", user.getRole())
                     .queryParam("id", user.getId().toString())
-                    .build().toUriString();
+                    .build()
+                    .toUriString();
 
+            System.out.println("✅ OAuth2 Success: Redirecting " + email + " to " + targetUrl);
             getRedirectStrategy().sendRedirect(request, response, targetUrl);
+
         } catch (Exception e) {
             e.printStackTrace();
-            response.sendRedirect("http://localhost:5173/login?error=oauth_failure");
+            System.out.println("❌ OAuth2 Success Handler Error: " + e.getMessage());
+            // ✅ FIX: Error redirect also uses frontendUrl, not hardcoded localhost
+            response.sendRedirect(frontendUrl + "/login?error=oauth_failure");
         }
     }
 }
