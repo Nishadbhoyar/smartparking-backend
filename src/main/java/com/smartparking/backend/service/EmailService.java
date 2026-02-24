@@ -17,7 +17,7 @@ public class EmailService {
     private JavaMailSender mailSender;
 
     // This will use localhost for your PC, but use the Vercel URL on Render
-    @Value("${app.frontend.url:https://smartparking-frontend-lilac.vercel.app}")
+    @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
     private static final String SENDER_EMAIL = "nishadbhoyar223@gmail.com";
