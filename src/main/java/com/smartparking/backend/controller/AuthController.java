@@ -8,6 +8,7 @@ import com.smartparking.backend.util.JwtUtil;
 import jakarta.mail.MessagingException;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder; // 👈 WAS MISSING
 import org.springframework.web.bind.annotation.*;
@@ -164,31 +165,59 @@ public class AuthController {
     @PostMapping("/send-magic-link")
     public ResponseEntity<?> sendMagicLink(@RequestBody Map<String, String> request) throws MessagingException {
         String email = request.get("email");
+
+        // 1. Check if user exists in DB
+        User user = userRepository.findByEmail(email).orElse(null);
+
+        if (user == null) {
+            // User not found: Return error and DO NOT send email
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "message", "Email not registered. Please sign up first."));
+        }
+
+        // 2. User exists: Generate and send link
         otpService.generateAndSendMagicLink(email);
-        return ResponseEntity.ok(Map.of("message", "Magic link sent! Check your email."));
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "Magic link sent! Check your email."));
     }
 
     @PostMapping("/verify-magic-link")
     public ResponseEntity<?> verifyMagicLink(@RequestBody Map<String, String> request) {
         String token = request.get("token");
         String email = otpService.validateMagicToken(token);
+
         if (email == null) {
-            return ResponseEntity.status(401).body("Error: Invalid or Expired Link");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Error: Invalid or Expired Link");
         }
 
         User user = userRepository.findByEmail(email).orElse(null);
+
+        // 1. Strict Login Check (Do not create new user)
         if (user == null) {
-            user = new User();
-            user.setEmail(email);
-            user.setName("New User");
-            user.setRole("DRIVER");
-            user.setProvider("MAGIC_LINK");
-            user.setPassword(passwordEncoder.encode("")); // Hash empty
-            userRepository.save(user);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User account not found.");
         }
 
         String jwt = jwtUtil.generateToken(user.getEmail());
-        return ResponseEntity.ok(buildLoginResponse(user, jwt));
+
+        // 2. Determine Dashboard URL based on Role
+        String redirectUrl = "/dashboard"; // Default fallback
+        String role = user.getRole();
+
+        if ("DRIVER".equalsIgnoreCase(role)) {
+            redirectUrl = "/driver/dashboard";
+        } else if ("ADMIN".equalsIgnoreCase(role)) {
+            redirectUrl = "/admin/dashboard";
+        } else if ("USER".equalsIgnoreCase(role)) {
+            redirectUrl = "/user/home";
+        }
+
+        // 3. Construct Response with Redirect URL
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", jwt);
+        response.put("user", user);
+        response.put("redirectUrl", redirectUrl); // <--- Frontend needs this
+
+        return ResponseEntity.ok(response);
     }
 
     // ==========================================
