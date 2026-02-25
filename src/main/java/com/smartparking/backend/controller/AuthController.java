@@ -41,6 +41,7 @@ public class AuthController {
         String email = request.get("email");
         try {
             otpService.generateAndSendOtp(email);
+            System.out.println(email);
             return ResponseEntity.ok(Map.of("message", "OTP sent successfully"));
         } catch (RuntimeException e) {
             // If it's the rate limit message we defined in OtpService
