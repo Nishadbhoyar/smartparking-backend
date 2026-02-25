@@ -39,14 +39,15 @@ public class AuthController {
     @PostMapping("/send-otp")
     public ResponseEntity<?> sendOtp(@RequestBody Map<String, String> request) {
         String email = request.get("email");
-        if (email == null || !email.contains("@")) {
-            return ResponseEntity.badRequest().body("Error: Invalid Email Address");
-        }
         try {
             otpService.generateAndSendOtp(email);
-            return ResponseEntity.ok(Map.of("message", "OTP sent successfully to " + email));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Error sending OTP: " + e.getMessage());
+            return ResponseEntity.ok(Map.of("message", "OTP sent successfully"));
+        } catch (RuntimeException e) {
+            // If it's the rate limit message we defined in OtpService
+            if (e.getMessage().contains("Too many OTP requests")) {
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(e.getMessage());
+            }
+            return ResponseEntity.internalServerError().body("Mail Server Error: " + e.getMessage());
         }
     }
 
@@ -112,16 +113,16 @@ public class AuthController {
         User user = new User();
         user.setName(signupRequest.getName());
         user.setEmail(signupRequest.getEmail());
-        
+
         // Hash password before saving
         user.setPassword(passwordEncoder.encode(signupRequest.getPassword()));
-        
+
         user.setRole(signupRequest.getRole());
         user.setPhoneNumber(signupRequest.getPhoneNumber());
         user.setProvider("EMAIL");
-        
+
         // ✅ NEW: Lock their account until they verify the OTP
-        user.setVerified(false); 
+        user.setVerified(false);
 
         userRepository.save(user);
 
@@ -129,7 +130,8 @@ public class AuthController {
         try {
             otpService.generateAndSendOtp(user.getEmail());
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("User registered, but failed to send OTP: " + e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body("User registered, but failed to send OTP: " + e.getMessage());
         }
 
         return ResponseEntity.ok(Map.of("message", "Registration successful! Please check your email for the OTP."));
