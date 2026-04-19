@@ -18,4 +18,5 @@ buildNumber.properties
 .env
 src/main/resources/application.properties
 target/
-.idea/
+.idea/.env 
+src/main/resources/application.properties 
